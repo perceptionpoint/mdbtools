@@ -17,6 +17,7 @@
  */
 
 #include "mdbtools.h"
+#include <stdbool.h>
 
 #ifdef DMALLOC
 #include "dmalloc.h"
@@ -172,3 +173,94 @@ mdb_dump_catalog(MdbHandle *mdb, int obj_type)
 	return;
 }
 
+bool mdb_get_tables(MdbHandle *mdb, char **names, size_t names_len) {
+    bool result = false;
+    if (!mdb_read_catalog(mdb, MDB_ANY)) {
+        goto cleanup;
+    }
+
+    for (unsigned int i = 0, j = 0; i < mdb->num_catalog; i++) {
+        MdbCatalogEntry *entry = g_ptr_array_index(mdb->catalog, i);
+        switch (entry->object_type) {
+        case MDB_TABLE:
+        case MDB_SYSTEM_TABLE:
+            if (j < names_len) {
+                names[j++] = (entry->object_name);
+            } else {
+                goto cleanup;
+            }
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    result = true;
+
+cleanup:
+    return result;
+}
+
+bool mdb_select_all(MdbHandle *mdb, 
+                    char *table_name,
+                    table_entry_visitor_t *handler) {
+    bool result = false;
+    MdbTableDef *table = NULL;
+    char **bound_values = NULL;
+    int *bound_lens = NULL; 
+
+    table = mdb_read_table_by_name(mdb, table_name, MDB_TABLE);
+    if (!table) {
+        goto cleanup;
+    }
+
+    /* read table */
+    mdb_read_columns(table);
+    mdb_rewind_table(table);
+    
+    bound_values = (char **) g_malloc(table->num_cols * sizeof(char *));
+    bound_lens = (int *) g_malloc(table->num_cols * sizeof(int));
+    for (unsigned int i = 0; i < table->num_cols; i++) {
+        /* bind columns */
+        bound_values[i] = (char *) g_malloc0(MDB_BIND_SIZE);
+        mdb_bind_column(table, i+1, bound_values[i], &bound_lens[i]);
+    }
+
+    unsigned int row = 0;
+    while (mdb_fetch_row(table)) {
+        for (unsigned int i = 0; i < table->num_cols; i++) {
+            MdbColumn *col = g_ptr_array_index(table->columns, i);
+            char *value = NULL;
+            size_t length = 0;
+
+            if (bound_lens[i]) {
+                if (col->col_type == MDB_OLE) {
+                    value = mdb_ole_read_full(mdb, col, &length);
+                } else {
+                    value = bound_values[i];
+                    length = bound_lens[i];
+                }
+                if (handler) {
+                    (*handler)(row, col->name, value, length);
+                }
+                if (col->col_type == MDB_OLE) {
+                    free(value);
+                }
+            }
+        }
+        row++;
+    }
+
+    /* free the memory used to bind */
+    for (unsigned int i = 0; i < table->num_cols; i++) {
+        g_free(bound_values[i]);
+    }
+
+    g_free(bound_values);
+    g_free(bound_lens);
+    mdb_free_tabledef(table);
+
+cleanup:
+    return result;
+}
