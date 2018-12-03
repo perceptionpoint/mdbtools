@@ -173,21 +173,20 @@ mdb_dump_catalog(MdbHandle *mdb, int obj_type)
 	return;
 }
 
-bool mdb_get_tables(MdbHandle *mdb, char **names, size_t names_len) {
+bool mdb_get_tables(MdbHandle *mdb, table_visitor_t *handler) {
     bool result = false;
+
     if (!mdb_read_catalog(mdb, MDB_ANY)) {
         goto cleanup;
     }
 
-    for (unsigned int i = 0, j = 0; i < mdb->num_catalog; i++) {
+    for (unsigned int i = 0; i < mdb->num_catalog; i++) {
         MdbCatalogEntry *entry = g_ptr_array_index(mdb->catalog, i);
         switch (entry->object_type) {
         case MDB_TABLE:
         case MDB_SYSTEM_TABLE:
-            if (j < names_len) {
-                names[j++] = (entry->object_name);
-            } else {
-                goto cleanup;
+            if (handler) {
+                (*handler)(entry->object_name);
             }
             break;
 
@@ -242,7 +241,7 @@ bool mdb_select_all(MdbHandle *mdb,
                     length = bound_lens[i];
                 }
                 if (handler) {
-                    (*handler)(row, col->name, value, length);
+                    (*handler)(row, col->name, col->col_type, value, length);
                 }
                 if (col->col_type == MDB_OLE) {
                     free(value);

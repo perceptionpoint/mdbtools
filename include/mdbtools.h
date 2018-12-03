@@ -590,7 +590,13 @@ extern void mdb_iconv_init(MdbHandle *mdb);
 extern void mdb_iconv_close(MdbHandle *mdb);
 extern const char* mdb_target_charset(MdbHandle *mdb);
 
-typedef void (table_entry_visitor_t)(unsigned int row, char *column_name, char *data, size_t size);
+typedef void (table_visitor_t)(const char *table_name);
+
+typedef void (table_entry_visitor_t)(unsigned int row,
+                                     char *column_name,
+                                     unsigned int column_type,
+                                     char *data,
+                                     size_t size);
 
 #ifdef __cplusplus
   }
